@@ -27,3 +27,5 @@ Thumbs.db
 
 Lib/
 site-packages/
+
+# Large datasets / outputs
