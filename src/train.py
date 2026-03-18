@@ -8,10 +8,12 @@ import numpy as np
 from torch_geometric.data import Batch
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score, average_precision_score
 
 from mol_graph      import smiles_to_graph
 from gnn_encoder    import GNNEncoder
 from ddi_classifier import DDIClassifier
+from feature_extractor import FeatureExtractor
 import os
 
 os.makedirs('models', exist_ok=True)
@@ -37,10 +39,11 @@ class DDIDataset(Dataset):
         if graph_a is None or graph_b is None:
             return None
 
-        # Normalised extra features
         extra = torch.tensor([
             min(float(row.get('shared_enzyme_count', 0) or 0), 21.0) / 21.0,
             min(float(row.get('shared_target_count', 0) or 0), 36.0) / 36.0,
+            min(float(row.get('shared_transporter_count', 0) or 0), 10.0) / 10.0,
+            min(float(row.get('shared_carrier_count', 0) or 0), 10.0) / 10.0,
             min(float(row.get('max_PRR', 0.0) or 0.0), 50.0) / 50.0,
             float(row.get('twosides_found', 0) or 0),
         ], dtype=torch.float)
@@ -82,26 +85,22 @@ for drug_id, smi in smiles_dict.items():
         graph_cache[drug_id] = g
 print(f"Cached {len(graph_cache)} graphs")
 
-# ── Enzyme/target lookups ──────────────────────────────────────────────────────
-print("Building enzyme/target lookups...")
-enzymes_df   = pd.read_csv('data/processed/drugbank_enzymes.csv')
-targets_df   = pd.read_csv('data/processed/drugbank_targets.csv')
-drug_enzymes = enzymes_df.groupby('drugbank_id')['enzyme_id'].apply(set).to_dict()
-drug_targets = targets_df.groupby('drugbank_id')['target_id'].apply(set).to_dict()
+# ── Lookups for negative sampling ─────────────────────────────────────────────
+print("Building lookups...")
+fe = FeatureExtractor('data/processed')
 
 interactions = pd.read_csv('data/processed/drugbank_interactions_enriched.csv')
 interactions = interactions[
     interactions['drug_1_id'].isin(smiles_dict) &
     interactions['drug_2_id'].isin(smiles_dict)
 ]
-#remove for full run
-# interactions = interactions.sample(n=50000, random_state=42)   
+# interactions = interactions.sample(n=50000, random_state=42)  # remove for full run
 print(f"Interactions loaded: {len(interactions)}")
 interactions['label'] = 1
 
 
 # ── 1. Drug-level split ────────────────────────────────────────────────────────
-all_drugs = list(set(interactions['drug_1_id']) | set(interactions['drug_2_id']))
+all_drugs = sorted(list(set(interactions['drug_1_id']) | set(interactions['drug_2_id'])))
 train_drugs, val_drugs = train_test_split(all_drugs, test_size=0.2, random_state=42)
 train_drugs, val_drugs = set(train_drugs), set(val_drugs)
 
@@ -110,13 +109,13 @@ train_pos = interactions[
     interactions['drug_2_id'].isin(train_drugs)
 ].copy()
 
-#both drugs unseen in val set
-val_pos = interactions[        
-    interactions['drug_1_id'].isin(val_drugs) &   
+# Both drugs unseen in val set (cold start)
+val_pos = interactions[
+    interactions['drug_1_id'].isin(val_drugs) &
     interactions['drug_2_id'].isin(val_drugs)
 ].copy()
 
-# ── One unseen drug ────────────────────────────────────────
+# One unseen drug (commented out)
 # val_pos = interactions[
 #     (interactions['drug_1_id'].isin(val_drugs) |
 #      interactions['drug_2_id'].isin(val_drugs)) &
@@ -127,33 +126,17 @@ val_pos = interactions[
 print(f"Train positives: {len(train_pos)} | Val positives: {len(val_pos)}")
 
 
-# ── 2. Negative sampling with real enzyme/target features ─────────────────────
-def sample_negatives(drug_pool, pos_pairs_global, n, seed=42):
-    np.random.seed(seed)
-    drug_pool   = list(drug_pool)
-    neg_samples = []
-    candidates  = np.random.choice(drug_pool, size=(n * 5, 2))
-    for a, b in candidates:
-        if (a != b
-                and (a, b) not in pos_pairs_global
-                and (b, a) not in pos_pairs_global):
-            neg_samples.append({
-                'drug_1_id': a,
-                'drug_2_id': b,
-                'label': 0,
-                'shared_enzyme_count': len(drug_enzymes.get(a, set()) & drug_enzymes.get(b, set())),
-                'shared_target_count': len(drug_targets.get(a, set()) & drug_targets.get(b, set())),
-                'max_PRR': 0.0,
-                'twosides_found': 0
-            })
-        if len(neg_samples) >= n:
-            break
-    return pd.DataFrame(neg_samples)
-
+# ── 2. Negative sampling with real features ───────────────────────────────────
 pos_pairs_global = set(zip(interactions['drug_1_id'], interactions['drug_2_id']))
 
-train_neg = sample_negatives(train_drugs, pos_pairs_global, n=len(train_pos), seed=42)
-val_neg   = sample_negatives(val_drugs,   pos_pairs_global, n=len(val_pos),   seed=43)
+train_neg = fe.sample_hard_negatives(
+    train_drugs, pos_pairs_global, n=len(train_pos),
+    seed=42, candidate_multiplier=50, hard_fraction=0.7
+)
+val_neg = fe.sample_hard_negatives(
+    val_drugs, pos_pairs_global, n=len(val_pos),
+    seed=43, candidate_multiplier=50, hard_fraction=0.7
+)
 
 print(f"Train negatives: {len(train_neg)} | Val negatives: {len(val_neg)}")
 
@@ -162,7 +145,9 @@ print(f"Train negatives: {len(train_neg)} | Val negatives: {len(val_neg)}")
 train_df = pd.concat([train_pos, train_neg], ignore_index=True).sample(frac=1, random_state=42)
 val_df   = pd.concat([val_pos,   val_neg],   ignore_index=True).sample(frac=1, random_state=42)
 
-for col in ['shared_enzyme_count', 'shared_target_count', 'max_PRR', 'twosides_found']:
+for col in ['shared_enzyme_count', 'shared_target_count',
+            'shared_transporter_count', 'shared_carrier_count',
+            'max_PRR', 'twosides_found']:
     for d in [train_df, val_df]:
         if col not in d.columns:
             d[col] = 0.0
@@ -186,11 +171,11 @@ val_loader   = DataLoader(val_ds,   batch_size=64, shuffle=False,
 
 # ── Models ─────────────────────────────────────────────────────────────────────
 gnn        = GNNEncoder().to(DEVICE)
-classifier = DDIClassifier(extra_features=4).to(DEVICE)
+classifier = DDIClassifier(extra_features=6, dropout=0.6).to(DEVICE)  # 6 features now
 
 optimizer = torch.optim.Adam(
     list(gnn.parameters()) + list(classifier.parameters()),
-    lr=1e-4, weight_decay=1e-5
+    lr=1e-4, weight_decay=5e-4
 )
 
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -210,13 +195,14 @@ with torch.no_grad():
         print(f"Embedding mean: {emb.mean().item():.4f}")
         print(f"Embedding std:  {emb.std().item():.4f}")
         print(f"Any NaN:        {torch.isnan(emb).any()}")
-        print(f"Extra sample:   {extra[0]}")
+        print(f"Extra sample:   {extra[0]}")  # should now show 6 values
 
 
 # ── Training loop ──────────────────────────────────────────────────────────────
 def train_epoch(loader):
     gnn.train(); classifier.train()
     total_loss = 0
+    correct = total = 0
 
     for batch in loader:
         if batch is None:
@@ -230,6 +216,10 @@ def train_epoch(loader):
         embed_a = gnn(g_a)
         embed_b = gnn(g_b)
 
+        # Symmetry augmentation
+        if torch.rand(1).item() > 0.5:
+            embed_a, embed_b = embed_b, embed_a
+
         prob, _ = classifier(embed_a, embed_b, extra)
         prob = prob.view(-1)
         loss = criterion(prob, labels)
@@ -241,15 +231,22 @@ def train_epoch(loader):
             max_norm=1.0
         )
         optimizer.step()
+        with torch.no_grad():
+            preds = (torch.sigmoid(prob) > 0.5).long()
+            correct += (preds == labels.long()).sum().item()
+            total   += labels.size(0)
         total_loss += loss.item()
 
-    return total_loss / len(loader)
+    train_acc = correct / total if total > 0 else 0
+    return total_loss / len(loader), train_acc
 
 
 def eval_epoch(loader):
     gnn.eval(); classifier.eval()
     correct = total = 0
     tp = fp = tn = fn = 0
+    y_true = []
+    y_prob = []
 
     with torch.no_grad():
         for batch in loader:
@@ -264,7 +261,7 @@ def eval_epoch(loader):
             embed_a = gnn(g_a)
             embed_b = gnn(g_b)
             prob, _ = classifier(embed_a, embed_b, extra)
-            prob  = torch.sigmoid(prob).view(-1)
+            prob = torch.sigmoid(prob).view(-1)
             preds = (prob > 0.5).long()
             correct += (preds == labels).sum().item()
             total   += labels.size(0)
@@ -275,27 +272,50 @@ def eval_epoch(loader):
                 elif label == 1 and pred == 0: fn += 1
                 elif label == 0 and pred == 1: fp += 1
 
+            y_true.extend(labels.detach().cpu().numpy().tolist())
+            y_prob.extend(prob.detach().cpu().numpy().tolist())
+
     print(f"  TP:{tp} TN:{tn} FP:{fp} FN:{fn}")
-    return correct / total if total > 0 else 0
+    acc = correct / total if total > 0 else 0
+    try:
+        auc = roc_auc_score(y_true, y_prob) if len(set(y_true)) > 1 else float('nan')
+        ap = average_precision_score(y_true, y_prob) if len(set(y_true)) > 1 else float('nan')
+    except Exception:
+        auc = float('nan')
+        ap = float('nan')
+    return acc, auc, ap
 
 
 # ── Run training ───────────────────────────────────────────────────────────────
-EPOCHS   = 15
-best_acc = 0
+EPOCHS = 50
+best_auc = -1.0
+patience = 6
+patience_left = patience
 
 for epoch in range(1, EPOCHS + 1):
-    loss = train_epoch(train_loader)
-    acc  = eval_epoch(val_loader)
-    scheduler.step(acc)
+    loss, train_acc = train_epoch(train_loader)
+    val_acc, val_auc, val_ap = eval_epoch(val_loader)
+    scheduler.step(val_auc if not np.isnan(val_auc) else val_acc)
 
-    print(f"Epoch {epoch:02d} | Loss: {loss:.4f} | Val Acc: {acc:.4f}")
+    print(
+        f"Epoch {epoch:02d} | Loss: {loss:.4f} | "
+        f"Train Acc: {train_acc:.4f} | Val Acc: {val_acc:.4f} | "
+        f"Val AUC: {val_auc:.4f} | Val AP: {val_ap:.4f}"
+    )
 
-    if acc > best_acc:
-        best_acc = acc
+    improved = (not np.isnan(val_auc) and val_auc > best_auc + 1e-4)
+    if improved:
+        best_auc = val_auc
+        patience_left = patience
         torch.save({
             'gnn':        gnn.state_dict(),
             'classifier': classifier.state_dict()
         }, 'models/ddi_model.pt')
-        print(f"  Saved best model (acc={best_acc:.4f})")
+        print(f"  Saved best model (val_auc={best_auc:.4f})")
+    else:
+        patience_left -= 1
+        if patience_left <= 0:
+            print(f"Early stopping at epoch {epoch:02d} (best_val_auc={best_auc:.4f})")
+            break
 
-print(f"\nTraining complete. Best val accuracy: {best_acc:.4f}")
+print(f"\nTraining complete. Best val AUC: {best_auc:.4f}")
