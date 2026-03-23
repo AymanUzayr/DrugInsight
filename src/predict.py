@@ -58,7 +58,12 @@ class DDIPredictor:
         """
 
         # ── Rule score (DrugBank evidence) ─────────────────────────────────────
-        has_known     = context['known_interaction'] is not None
+        ki = context.get('known_interaction')
+        has_known = (
+            ki is not None and
+            ki.get('mechanism') is not None and
+            str(ki.get('mechanism', '')).strip() not in ('', 'nan', 'None')
+        )
         has_enzymes   = context['shared_enzyme_count'] > 0
         has_targets   = context['shared_target_count'] > 0
         has_pathways  = len(context['shared_pathways']) > 0

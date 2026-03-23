@@ -287,7 +287,15 @@ class FeatureExtractor:
             (self.known_interactions['drug_2_id'] == id_a)
         )
         matches = self.known_interactions[mask]
-        return matches.iloc[0].to_dict() if len(matches) > 0 else None
+        if len(matches) == 0:
+            return None
+        row = matches.iloc[0]
+        # Only return real DrugBank interactions — sampled negatives
+        # exist in the CSV but have no mechanism text
+        mechanism = row.get('mechanism', None)
+        if pd.isna(mechanism) or str(mechanism).strip() in ('', 'nan', 'None'):
+            return None
+        return row.to_dict()
 
     def extract(self, drug_a, drug_b):
         id_a, name_a = self.resolve_drug(drug_a)

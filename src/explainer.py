@@ -46,36 +46,75 @@ class Explainer:
 
         name_a = context['drug_a']['name']
         name_b = context['drug_b']['name']
+        name_b_lower = name_b.lower()
+        name_a_lower = name_a.lower()
 
         enzyme_names = [e.get('gene_name') or e.get('enzyme_name', 'unknown') for e in shared[:3]]
         enzyme_str   = ', '.join(enzyme_names)
 
-        # Check if either drug is an inhibitor of shared enzymes
+        # Fix 1 — check known CYP inhibitors/inducers first (most specific)
+        for e in shared:
+            gene = (e.get('gene_name') or '').upper()
+
+            if gene in self.CYP_INHIBITORS:
+                if any(inh in name_b_lower for inh in self.CYP_INHIBITORS[gene]):
+                    return (
+                        f"{name_b} is a known inhibitor of {gene}, the primary enzyme "
+                        f"responsible for {name_a} metabolism. This inhibition reduces "
+                        f"{name_a} clearance, increasing its plasma concentration and "
+                        f"risk of toxicity."
+                    )
+                if any(inh in name_a_lower for inh in self.CYP_INHIBITORS[gene]):
+                    return (
+                        f"{name_a} is a known inhibitor of {gene}, the primary enzyme "
+                        f"responsible for {name_b} metabolism. This inhibition reduces "
+                        f"{name_b} clearance, increasing its plasma concentration and "
+                        f"risk of toxicity."
+                    )
+
+            if gene in self.CYP_INDUCERS:
+                if any(ind in name_b_lower for ind in self.CYP_INDUCERS[gene]):
+                    return (
+                        f"{name_b} induces {gene}, accelerating {name_a} metabolism "
+                        f"and reducing its plasma concentration, potentially leading to "
+                        f"therapeutic failure."
+                    )
+                if any(ind in name_a_lower for ind in self.CYP_INDUCERS[gene]):
+                    return (
+                        f"{name_a} induces {gene}, accelerating {name_b} metabolism "
+                        f"and reducing its plasma concentration, potentially leading to "
+                        f"therapeutic failure."
+                    )
+
+        # Fall back to DrugBank actions on shared enzyme
         inhibition_notes = []
         for e in shared:
             gene = (e.get('gene_name') or '').upper()
-            # Check actions for both drugs on this enzyme
             enzymes_b = context.get('enzymes_b', [])
-            actions_b = next((self._get_actions(eb) for eb in enzymes_b 
-                          if eb.get('enzyme_id') == e.get('enzyme_id')), '')
-    
+            actions_b = next((self._get_actions(eb) for eb in enzymes_b
+                              if eb.get('enzyme_id') == e.get('enzyme_id')), '')
             if 'inhibit' in actions_b.lower():
                 inhibition_notes.append(
-                    f"{name_b} inhibits {gene}, which may impair metabolism of {name_a}"
+                    f"{name_b} inhibits {gene}, which may impair metabolism of "
+                    f"{name_a}, potentially increasing its plasma concentration "
+                    f"and the risk of dose-dependent adverse effects."
                 )
             elif 'induc' in actions_b.lower():
                 inhibition_notes.append(
-                    f"{name_b} induces {gene}, which may accelerate metabolism of {name_a}"
+                    f"{name_b} induces {gene}, which may accelerate metabolism of "
+                    f"{name_a}, potentially reducing its therapeutic efficacy."
                 )
 
         if inhibition_notes:
-            return inhibition_notes[0] + f", potentially altering its plasma concentration."
-        else:
-            return (
-                f"Both {name_a} and {name_b} are metabolised by {enzyme_str}. "
-                f"Co-administration may lead to competition for these enzymes, "
-                f"altering the metabolism and plasma levels of one or both drugs."
-            )
+            return inhibition_notes[0]
+
+        # Generic substrate competition
+        return (
+            f"Both {name_a} and {name_b} are metabolised by {enzyme_str}. "
+            f"Co-administration may lead to competition for these enzymes, "
+            f"altering the metabolism and plasma levels of one or both drugs "
+            f"and increasing the risk of adverse effects or reduced efficacy."
+        )
 
     def _target_mechanism(self, context):
         """Generate pharmacodynamic mechanism sentence."""
@@ -182,17 +221,36 @@ class Explainer:
                 )
             }
 
+        # Fix 3 — use DrugBank mechanism text as primary source if available
+        ki = context.get('known_interaction')
+        db_mechanism = None
+        if ki and ki.get('mechanism') and str(ki.get('mechanism', '')).strip() not in ('', 'nan', 'None'):
+            db_mechanism = str(ki['mechanism']).strip()
+
         # Build mechanism paragraphs
         enzyme_text  = self._enzyme_mechanism(context)
         target_text  = self._target_mechanism(context)
         pvg_text     = self._pharmacovigilance_note(context)
         rec_text     = self._clinical_recommendation(sev_label, context)
 
-        mechanism_parts = [p for p in [enzyme_text, target_text, pvg_text] if p]
-        mechanism_text  = ' '.join(mechanism_parts) if mechanism_parts else (
-            "The interaction mechanism is not fully characterised from available structural "
-            "and pharmacological data, but molecular analysis suggests a potential interaction."
-        )
+        if db_mechanism:
+            # Priority 1: DrugBank curated mechanism text
+            mechanism_text = db_mechanism
+        else:
+            mechanism_parts = [p for p in [enzyme_text, target_text, pvg_text] if p]
+            mechanism_text  = ' '.join(mechanism_parts) if mechanism_parts else (
+                "The interaction mechanism is not fully characterised from available structural "
+                "and pharmacological data, but molecular analysis suggests a potential interaction."
+            )
+
+        # Fix 2 — append severity-linked clinical consequence
+        consequence = {
+            'Major':    "This combination may cause serious or life-threatening adverse effects.",
+            'Moderate': "This combination may cause clinically significant adverse effects requiring monitoring.",
+            'Minor':    "This combination may cause minor adverse effects unlikely to require intervention.",
+        }
+        if sev_label in consequence:
+            mechanism_text += f" {consequence[sev_label]}"
 
         summary = (
             f"A {sev_label.lower()} interaction is predicted between {name_a} and {name_b} "
