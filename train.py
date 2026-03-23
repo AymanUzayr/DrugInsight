@@ -1,8 +1,10 @@
+from rdkit import Chem, RDLogger
+RDLogger.DisableLog('rdApp.*')
+
 import torch
 import torch.nn as nn
 import pandas as pd
 import numpy as np
-from rdkit import Chem, RDLogger
 from torch_geometric.data import Batch
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
@@ -12,7 +14,6 @@ from gnn_encoder    import GNNEncoder
 from ddi_classifier import DDIClassifier
 import os
 
-RDLogger.DisableLog('rdApp.*')
 os.makedirs('models', exist_ok=True)
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -36,10 +37,11 @@ class DDIDataset(Dataset):
         if graph_a is None or graph_b is None:
             return None
 
+        # Normalised extra features
         extra = torch.tensor([
-            float(row.get('shared_enzyme_count', 0) or 0),
-            float(row.get('shared_target_count', 0) or 0),
-            float(row.get('max_PRR', 0.0) or 0.0),
+            min(float(row.get('shared_enzyme_count', 0) or 0), 21.0) / 21.0,
+            min(float(row.get('shared_target_count', 0) or 0), 36.0) / 36.0,
+            min(float(row.get('max_PRR', 0.0) or 0.0), 50.0) / 50.0,
             float(row.get('twosides_found', 0) or 0),
         ], dtype=torch.float)
 
@@ -80,7 +82,7 @@ for drug_id, smi in smiles_dict.items():
         graph_cache[drug_id] = g
 print(f"Cached {len(graph_cache)} graphs")
 
-# ── Load enzyme/target lookups for realistic negative features ─────────────────
+# ── Enzyme/target lookups ──────────────────────────────────────────────────────
 print("Building enzyme/target lookups...")
 enzymes_df   = pd.read_csv('data/processed/drugbank_enzymes.csv')
 targets_df   = pd.read_csv('data/processed/drugbank_targets.csv')
@@ -92,8 +94,9 @@ interactions = interactions[
     interactions['drug_1_id'].isin(smiles_dict) &
     interactions['drug_2_id'].isin(smiles_dict)
 ]
-interactions = interactions.sample(n=50000, random_state=42)  # remove for full run
-print(f"Interactions with full SMILES coverage: {len(interactions)}")
+#remove for full run
+# interactions = interactions.sample(n=50000, random_state=42)   
+print(f"Interactions loaded: {len(interactions)}")
 interactions['label'] = 1
 
 
@@ -107,10 +110,19 @@ train_pos = interactions[
     interactions['drug_2_id'].isin(train_drugs)
 ].copy()
 
-val_pos = interactions[
-    interactions['drug_1_id'].isin(val_drugs) &
+#both drugs unseen in val set
+val_pos = interactions[        
+    interactions['drug_1_id'].isin(val_drugs) &   
     interactions['drug_2_id'].isin(val_drugs)
 ].copy()
+
+# ── One unseen drug ────────────────────────────────────────
+# val_pos = interactions[
+#     (interactions['drug_1_id'].isin(val_drugs) |
+#      interactions['drug_2_id'].isin(val_drugs)) &
+#     ~(interactions['drug_1_id'].isin(val_drugs) &
+#       interactions['drug_2_id'].isin(val_drugs))
+# ].copy()
 
 print(f"Train positives: {len(train_pos)} | Val positives: {len(val_pos)}")
 
@@ -129,7 +141,6 @@ def sample_negatives(drug_pool, pos_pairs_global, n, seed=42):
                 'drug_1_id': a,
                 'drug_2_id': b,
                 'label': 0,
-                # Real lookup — negatives now have honest enzyme/target counts
                 'shared_enzyme_count': len(drug_enzymes.get(a, set()) & drug_enzymes.get(b, set())),
                 'shared_target_count': len(drug_targets.get(a, set()) & drug_targets.get(b, set())),
                 'max_PRR': 0.0,
@@ -157,24 +168,20 @@ for col in ['shared_enzyme_count', 'shared_target_count', 'max_PRR', 'twosides_f
             d[col] = 0.0
         d[col] = d[col].fillna(0.0)
 
-# Feature stats — negatives should now have non-zero values
-print("\nPositive extra feature stats:")
-print(train_df[train_df['label']==1][['shared_enzyme_count','shared_target_count','max_PRR','twosides_found']].describe())
-print("\nNegative extra feature stats:")
-print(train_df[train_df['label']==0][['shared_enzyme_count','shared_target_count','max_PRR','twosides_found']].describe())
-
 
 # ── 4. Sanity check ───────────────────────────────────────────────────────────
 train_ids = set(train_df['drug_1_id']) | set(train_df['drug_2_id'])
 val_ids   = set(val_df['drug_1_id'])   | set(val_df['drug_2_id'])
-print(f"\nDrug overlap: {len(train_ids & val_ids)}")  # must be 0
+print(f"Drug overlap: {len(train_ids & val_ids)}")  # must be 0
 print(f"Train: {len(train_df)} | Val: {len(val_df)}")
 
 train_ds = DDIDataset(train_df, graph_cache)
 val_ds   = DDIDataset(val_df,   graph_cache)
 
-train_loader = DataLoader(train_ds, batch_size=32, shuffle=True,  collate_fn=collate_fn)
-val_loader   = DataLoader(val_ds,   batch_size=32, shuffle=False, collate_fn=collate_fn)
+train_loader = DataLoader(train_ds, batch_size=64, shuffle=True,
+                          collate_fn=collate_fn, num_workers=0, pin_memory=True)
+val_loader   = DataLoader(val_ds,   batch_size=64, shuffle=False,
+                          collate_fn=collate_fn, num_workers=0, pin_memory=True)
 
 
 # ── Models ─────────────────────────────────────────────────────────────────────
@@ -183,11 +190,11 @@ classifier = DDIClassifier(extra_features=4).to(DEVICE)
 
 optimizer = torch.optim.Adam(
     list(gnn.parameters()) + list(classifier.parameters()),
-    lr=3e-4, weight_decay=1e-5
+    lr=1e-4, weight_decay=1e-4
 )
 
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    optimizer, mode='max', factor=0.5, patience=3, verbose=True
+    optimizer, mode='max', factor=0.5, patience=3
 )
 
 criterion = nn.BCEWithLogitsLoss()
@@ -200,15 +207,17 @@ with torch.no_grad():
         g_a, g_b, extra, labels = sample_batch
         g_a = g_a.to(DEVICE)
         emb = gnn(g_a)
-        print(f"\nEmbedding mean: {emb.mean().item():.4f}")
+        print(f"Embedding mean: {emb.mean().item():.4f}")
         print(f"Embedding std:  {emb.std().item():.4f}")
         print(f"Any NaN:        {torch.isnan(emb).any()}")
+        print(f"Extra sample:   {extra[0]}")
 
 
 # ── Training loop ──────────────────────────────────────────────────────────────
 def train_epoch(loader):
     gnn.train(); classifier.train()
     total_loss = 0
+    correct = total = 0
 
     for batch in loader:
         if batch is None:
@@ -222,6 +231,9 @@ def train_epoch(loader):
         embed_a = gnn(g_a)
         embed_b = gnn(g_b)
 
+        if torch.rand(1).item() > 0.5:
+            embed_a, embed_b = embed_b, embed_a
+
         prob, _ = classifier(embed_a, embed_b, extra)
         prob = prob.view(-1)
         loss = criterion(prob, labels)
@@ -233,9 +245,13 @@ def train_epoch(loader):
             max_norm=1.0
         )
         optimizer.step()
+        with torch.no_grad():
+            preds = (torch.sigmoid(prob) > 0.5).long()
+            correct += (preds == labels.long()).sum().item()
+            total   += labels.size(0)
         total_loss += loss.item()
-
-    return total_loss / len(loader)
+    train_acc = correct / total if total > 0 else 0
+    return total_loss / len(loader), train_acc
 
 
 def eval_epoch(loader):
@@ -272,22 +288,22 @@ def eval_epoch(loader):
 
 
 # ── Run training ───────────────────────────────────────────────────────────────
-EPOCHS   = 10
+EPOCHS   = 15
 best_acc = 0
 
 for epoch in range(1, EPOCHS + 1):
-    loss = train_epoch(train_loader)
-    acc  = eval_epoch(val_loader)
-    scheduler.step(acc)
+    loss, train_acc = train_epoch(train_loader)
+    val_acc = eval_epoch(val_loader)
+    scheduler.step(val_acc)
 
-    print(f"Epoch {epoch:02d} | Loss: {loss:.4f} | Val Acc: {acc:.4f}")
+    print(f"Epoch {epoch:02d} | Loss: {loss:.4f} | Train Acc: {train_acc:.4f} | Val Acc: {val_acc:.4f}")
 
-    if acc > best_acc:
-        best_acc = acc
+    if val_acc > best_acc:
+        best_acc = val_acc
         torch.save({
             'gnn':        gnn.state_dict(),
             'classifier': classifier.state_dict()
         }, 'models/ddi_model.pt')
-        print(f"  Saved best model (acc={best_acc:.4f})")
+        print(f"  Saved best model (val_acc={best_acc:.4f})")
 
 print(f"\nTraining complete. Best val accuracy: {best_acc:.4f}")

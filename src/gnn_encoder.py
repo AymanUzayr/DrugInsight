@@ -11,7 +11,7 @@ class GNNEncoder(nn.Module):
                  out_channels=256,    # embedding size
                  num_layers=4,
                  num_timesteps=2,
-                 dropout=0.2):
+                 dropout=0.3):
         super().__init__()
 
         self.attentive_fp = AttentiveFP(

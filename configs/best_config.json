@@ -1,0 +1,7 @@
+{
+    "label_smoothing": true,
+    "weighted_loss": false,
+    "dropout": 0.5,
+    "val_auc": 0.6329240966862422,
+    "recommendation": "Config B selected due to highest val AUC. Gap is acceptable. No NaNs detected."
+}

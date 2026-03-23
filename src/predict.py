@@ -32,7 +32,7 @@ class DDIPredictor:
         self.smiles_dict = dict(zip(smiles_df['drugbank_id'], smiles_df['smiles']))
 
         self.gnn        = GNNEncoder().to(DEVICE)
-        self.classifier = DDIClassifier(extra_features=4).to(DEVICE)
+        self.classifier = DDIClassifier(extra_features=6).to(DEVICE)
 
         checkpoint = torch.load(model_path, map_location=DEVICE, weights_only=True)
         self.gnn.load_state_dict(checkpoint['gnn'])
@@ -222,6 +222,8 @@ class DDIPredictor:
         extra = torch.tensor([[
             min(float(context['shared_enzyme_count']), 21.0) / 21.0,
             min(float(context['shared_target_count']), 36.0) / 36.0,
+            min(float(context.get('shared_transporter_count', 0)), 10.0) / 10.0,
+            min(float(context.get('shared_carrier_count', 0)), 10.0) / 10.0,
             min(float(context.get('max_PRR', 0.0) or 0.0), 50.0) / 50.0,
             float(context.get('twosides_found', 0) or 0),
         ]], dtype=torch.float).to(DEVICE)

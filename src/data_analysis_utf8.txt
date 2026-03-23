@@ -1,0 +1,309 @@
+﻿
+==================================================
+Analyzing drugbank_carriers.csv
+==================================================
+  Shape: (974, 8)
+  Null counts:
+    actions: 276 nulls
+    organism: 2 nulls
+    gene_name: 3 nulls
+    uniprot_id: 2 nulls
+  Unique values (all cols):
+    drugbank_id: 695
+    drug_name: 695
+    carrier_id: 84
+    carrier_name: 84
+    actions: 15
+    organism: 3
+    gene_name: 80
+    uniprot_id: 81
+
+==================================================
+Analyzing drugbank_drugs.csv
+==================================================
+  Shape: (19830, 20)
+  Null counts:
+    cas_number: 6729 nulls
+    unii: 4777 nulls
+    average_mass: 5211 nulls
+    monoisotopic_mass: 5211 nulls
+    state: 10397 nulls
+    indication: 15357 nulls
+    pharmacodynamics: 16583 nulls
+    mechanism_of_action: 15583 nulls
+    metabolism: 17356 nulls
+    absorption: 17240 nulls
+    half_life: 17299 nulls
+    protein_binding: 17807 nulls
+    toxicity: 17224 nulls
+    synonyms: 899 nulls
+    categories: 8705 nulls
+    description: 7391 nulls
+  Unique values (all cols):
+    drugbank_id: 19830
+    name: 19830
+    type: 2
+    groups: 30
+    cas_number: 13074
+    unii: 15053
+    average_mass: 12477
+    monoisotopic_mass: 12631
+    state: 3
+    indication: 3891
+    pharmacodynamics: 3203
+    mechanism_of_action: 4185
+    metabolism: 2267
+    absorption: 2467
+    half_life: 2336
+    protein_binding: 1815
+    toxicity: 2549
+    synonyms: 18604
+    categories: 7971
+    description: 12183
+
+==================================================
+Analyzing drugbank_enzymes.csv
+==================================================
+  Shape: (9837, 10)
+  Null counts:
+    enzyme_id: 3775 nulls
+    actions: 3801 nulls
+    inhibition_strength: 7819 nulls
+    induction_strength: 9005 nulls
+    organism: 3779 nulls
+    gene_name: 3781 nulls
+    uniprot_id: 3779 nulls
+  Unique values (all cols):
+    drugbank_id: 1926
+    drug_name: 1926
+    enzyme_id: 475
+    enzyme_name: 506
+    actions: 28
+    inhibition_strength: 4
+    induction_strength: 4
+    organism: 32
+    gene_name: 451
+    uniprot_id: 459
+
+==================================================
+Analyzing drugbank_external_ids.csv
+==================================================
+  Shape: (358348, 4)
+  Null counts:
+    identifier: 1 nulls
+  Unique values (all cols):
+    drugbank_id: 17425
+    drug_name: 17425
+    resource: 25
+    identifier: 115662
+
+==================================================
+Analyzing drugbank_interactions.csv
+==================================================
+  Shape: (2910010, 5)
+  Null counts:
+    No null columns.
+  Unique values (all cols):
+    drug_1_id: 4628
+    drug_1_name: 4628
+    drug_2_id: 4629
+    drug_2_name: 4629
+    mechanism: 1455276
+
+==================================================
+Analyzing drugbank_interactions_enriched.csv
+==================================================
+  Shape: (1872356, 11)
+  Null counts:
+    No null columns.
+  Unique values (all cols):
+    drug_1_id: 3181
+    drug_1_name: 3181
+    drug_2_id: 3181
+    drug_2_name: 3181
+    mechanism: 936178
+    shared_enzyme_count: 20
+    shared_target_count: 29
+    shared_transporter_count: 16
+    shared_carrier_count: 4
+    max_PRR: 85
+    twosides_found: 2
+
+  --- Feature distributions ---
+       shared_enzyme_count  shared_target_count  shared_transporter_count  shared_carrier_count       max_PRR  twosides_found
+count         1.872356e+06         1.872356e+06              1.872356e+06          1.872356e+06  1.872356e+06    1.872356e+06
+mean          6.290567e-01         8.243197e-02              1.720282e-01          5.252206e-02  1.132522e-01    1.997483e-03
+std           1.195748e+00         5.257906e-01              5.581379e-01          2.342194e-01  3.478199e+00    4.464857e-02
+min           0.000000e+00         0.000000e+00              0.000000e+00          0.000000e+00  0.000000e+00    0.000000e+00
+25%           0.000000e+00         0.000000e+00              0.000000e+00          0.000000e+00  0.000000e+00    0.000000e+00
+50%           0.000000e+00         0.000000e+00              0.000000e+00          0.000000e+00  0.000000e+00    0.000000e+00
+75%           1.000000e+00         0.000000e+00              0.000000e+00          0.000000e+00  0.000000e+00    0.000000e+00
+max           2.100000e+01         3.600000e+01              1.800000e+01          3.000000e+00  9.600000e+02    1.000000e+00
+
+==================================================
+Analyzing drugbank_interactions_filtered.csv
+==================================================
+  Shape: (1872356, 5)
+  Null counts:
+    No null columns.
+  Unique values (all cols):
+    drug_1_id: 3181
+    drug_1_name: 3181
+    drug_2_id: 3181
+    drug_2_name: 3181
+    mechanism: 936178
+
+==================================================
+Analyzing drugbank_pathways.csv
+==================================================
+  Shape: (205292, 5)
+  Null counts:
+    No null columns.
+  Unique values (all cols):
+    drugbank_id: 652
+    drug_name: 652
+    smpdb_id: 48627
+    pathway_name: 48622
+    category: 6
+
+==================================================
+Analyzing drugbank_smiles.csv
+==================================================
+  Shape: (14616, 3)
+  Null counts:
+    No null columns.
+  Unique values (all cols):
+    drugbank_id: 14616
+    drug_name: 14616
+    smiles: 14609
+
+  --- SMILES validity rate ---
+  14616/14616 (100.00% valid)
+
+==================================================
+Analyzing drugbank_smiles_filtered.csv
+==================================================
+  Shape: (3803, 3)
+  Null counts:
+    No null columns.
+  Unique values (all cols):
+    drugbank_id: 3803
+    drug_name: 3803
+    smiles: 3801
+
+  --- SMILES validity rate ---
+  3803/3803 (100.00% valid)
+
+==================================================
+Analyzing drugbank_targets.csv
+==================================================
+  Shape: (24231, 9)
+  Null counts:
+    actions: 9169 nulls
+    organism: 328 nulls
+    gene_name: 1040 nulls
+    uniprot_id: 328 nulls
+  Unique values (all cols):
+    drugbank_id: 10000
+    drug_name: 10000
+    target_id: 5144
+    target_name: 4612
+    actions: 155
+    known_action: 3
+    organism: 539
+    gene_name: 4243
+    uniprot_id: 4950
+
+==================================================
+Analyzing drugbank_transporters.csv
+==================================================
+  Shape: (3638, 8)
+  Null counts:
+    actions: 278 nulls
+    organism: 1 nulls
+    gene_name: 1 nulls
+    uniprot_id: 1 nulls
+  Unique values (all cols):
+    drugbank_id: 1178
+    drug_name: 1178
+    transporter_id: 280
+    transporter_name: 277
+    actions: 26
+    organism: 8
+    gene_name: 277
+    uniprot_id: 278
+
+==================================================
+Analyzing rxnorm_bridge.csv
+==================================================
+  Shape: (5776, 3)
+  Null counts:
+    No null columns.
+  Unique values (all cols):
+    drugbank_id: 5776
+    drug_name: 5776
+    rxnorm_id: 5774
+
+==================================================
+Analyzing twosides_features_filtered.csv
+==================================================
+  Shape: (875226, 13)
+  Null counts:
+    No null columns.
+  Unique values (all cols):
+    drug_1_rxnorn_id: 878
+    drug_1_concept_name: 878
+    drug_2_rxnorm_id: 956
+    drug_2_concept_name: 956
+    condition_meddra_id: 8207
+    condition_concept_name: 8207
+    A: 454
+    B: 5139
+    C: 1438
+    D: 25866
+    PRR: 11136
+    PRR_error: 138504
+    mean_reporting_frequency: 16567
+
+==================================================
+Analyzing twosides_processed.csv
+==================================================
+  Shape: (2354, 11)
+  Null counts:
+    No null columns.
+  Unique values (all cols):
+    drug_1_rxnorn_id: 629
+    drug_2_rxnorm_id: 668
+    drug_1_concept_name: 629
+    drug_2_concept_name: 668
+    num_signals: 256
+    max_PRR: 423
+    mean_PRR: 2057
+    total_coreports: 859
+    mean_report_freq: 2048
+    top_condition: 365
+    ddi_label: 1
+
+==================================================
+Analyzing twosides_processed_filtered.csv
+==================================================
+  Shape: (1953, 11)
+  Null counts:
+    No null columns.
+  Unique values (all cols):
+    drug_1_rxnorn_id: 549
+    drug_2_rxnorm_id: 584
+    drug_1_concept_name: 550
+    drug_2_concept_name: 584
+    num_signals: 239
+    max_PRR: 393
+    mean_PRR: 1726
+    total_coreports: 763
+    mean_report_freq: 1733
+    top_condition: 339
+    ddi_label: 1
+
+==================================================
+Aggregate Statistics
+==================================================
+Total unique drugs across enzyme/target/transporter/carrier data: 10280

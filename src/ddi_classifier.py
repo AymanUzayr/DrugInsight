@@ -5,12 +5,12 @@ import torch.nn as nn
 class DDIClassifier(nn.Module):
     def __init__(self,
                  drug_embed_dim=256,
-                 extra_features=4,
-                 dropout=0.3):
+                 extra_features=6,
+                 dropout=0.5):
         super().__init__()
 
-        input_dim = drug_embed_dim * 2 + extra_features  # 516
-
+        input_dim = drug_embed_dim * 2 + extra_features  # 518
+        
         # Shared trunk
         self.trunk = nn.Sequential(
             nn.Linear(input_dim, 512),

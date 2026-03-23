@@ -131,11 +131,11 @@ pos_pairs_global = set(zip(interactions['drug_1_id'], interactions['drug_2_id'])
 
 train_neg = fe.sample_hard_negatives(
     train_drugs, pos_pairs_global, n=len(train_pos),
-    seed=42, candidate_multiplier=50, hard_fraction=0.7
+    seed=42, candidate_multiplier=10, hard_fraction=0.7
 )
 val_neg = fe.sample_hard_negatives(
     val_drugs, pos_pairs_global, n=len(val_pos),
-    seed=43, candidate_multiplier=50, hard_fraction=0.7
+    seed=43, candidate_multiplier=10, hard_fraction=0.7
 )
 
 print(f"Train negatives: {len(train_neg)} | Val negatives: {len(val_neg)}")
@@ -171,12 +171,12 @@ val_loader   = DataLoader(val_ds,   batch_size=64, shuffle=False,
 
 # ── Models ─────────────────────────────────────────────────────────────────────
 gnn        = GNNEncoder().to(DEVICE)
-classifier = DDIClassifier(extra_features=6, dropout=0.6).to(DEVICE)  # 6 features now
+classifier = DDIClassifier(extra_features=6, dropout=0.5).to(DEVICE)  # 6 features now
 
-optimizer = torch.optim.Adam(
-    list(gnn.parameters()) + list(classifier.parameters()),
-    lr=1e-4, weight_decay=5e-4
-)
+optimizer = torch.optim.Adam([
+    {'params': gnn.parameters(),        'lr': 3e-5},  # 3x slower than before
+    {'params': classifier.parameters(), 'lr': 1e-4},
+], weight_decay=5e-4)
 
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
     optimizer, mode='max', factor=0.5, patience=3
@@ -287,7 +287,7 @@ def eval_epoch(loader):
 
 
 # ── Run training ───────────────────────────────────────────────────────────────
-EPOCHS = 50
+EPOCHS = 20
 best_auc = -1.0
 patience = 6
 patience_left = patience
