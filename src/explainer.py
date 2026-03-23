@@ -168,6 +168,13 @@ class Explainer:
                 'summary': f"No significant interaction predicted between {name_a} and {name_b}.",
                 'mechanism': "No shared metabolic enzymes or pharmacological targets were identified that would suggest a clinically significant interaction.",
                 'recommendation': "Standard prescribing guidelines apply. No special precautions required based on available data.",
+                'supporting_evidence': {
+                    'shared_enzymes': [],
+                    'shared_targets': [],
+                    'shared_pathways': [],
+                    'twosides_signal': False,
+                    'max_PRR': 0.0,
+                },
                 'full_text': (
                     f"No significant interaction predicted between {name_a} and {name_b} "
                     f"(confidence: {prob*100:.1f}%). "
