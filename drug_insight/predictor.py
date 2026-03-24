@@ -277,6 +277,13 @@ class DrugInsight:
     def drug_names(self) -> list:
         return sorted(self.feature_extractor.id_to_name.values())
 
+    def drug_names_with_smiles(self) -> list:
+        """Return only drug names that have valid SMILES — safe for prediction."""
+        return sorted(
+            name for db_id, name in self.feature_extractor.id_to_name.items()
+            if db_id in self.smiles_dict
+        )
+
     @classmethod
     def get_instance(cls, **kwargs) -> 'DrugInsight':
         if cls._instance is None:
